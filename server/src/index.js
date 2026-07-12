@@ -13,6 +13,7 @@ import bidRoutes from './routes/bids.js';
 import messageRoutes from './routes/messages.js';
 import paymentRoutes from './routes/payments.js';
 import reviewRoutes from './routes/reviews.js';
+import dashboardRoutes from './routes/dashboard.js';
 
 dotenv.config();
 
@@ -37,6 +38,7 @@ app.use('/api/bids', bidRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
