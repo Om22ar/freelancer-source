@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getConversations, getMessages, sendMessage } from '../controllers/messagesController.js';
 import { authenticate } from '../middleware/auth.js';
+import { messageLimiter } from '../middleware/rateLimiter.js';
 
 const router = Router();
 
@@ -10,7 +11,7 @@ router.get('/conversations', authenticate, getConversations);
 // Get messages for a specific contract conversation
 router.get('/conversations/:contractId', authenticate, getMessages);
 
-// Send a message (REST fallback, prefer Socket.io)
-router.post('/', authenticate, sendMessage);
+// Send a message (REST fallback, rate limited: 30/min)
+router.post('/', authenticate, messageLimiter, sendMessage);
 
 export default router;
