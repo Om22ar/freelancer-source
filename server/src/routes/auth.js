@@ -1,24 +1,18 @@
 import { Router } from 'express';
+import { register, login, getMe } from '../controllers/authController.js';
+import { registerRules, loginRules } from '../validators/authValidator.js';
+import { validate } from '../middleware/validate.js';
+import { authenticate } from '../middleware/auth.js';
+
 const router = Router();
 
 // POST /api/auth/register
-router.post('/register', (req, res) => {
-  res.json({ message: 'TODO: Register user' });
-});
+router.post('/register', registerRules, validate, register);
 
 // POST /api/auth/login
-router.post('/login', (req, res) => {
-  res.json({ message: 'TODO: Login user' });
-});
+router.post('/login', loginRules, validate, login);
 
-// POST /api/auth/logout
-router.post('/logout', (req, res) => {
-  res.json({ message: 'TODO: Logout user' });
-});
-
-// GET /api/auth/google
-router.get('/google', (req, res) => {
-  res.json({ message: 'TODO: Google OAuth' });
-});
+// GET /api/auth/me (protected)
+router.get('/me', authenticate, getMe);
 
 export default router;
