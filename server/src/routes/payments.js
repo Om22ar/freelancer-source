@@ -1,9 +1,17 @@
 import { Router } from 'express';
+import express from 'express';
+import { createEscrowPayment, releasePayment, refundPayment, getPaymentHistory, handleWebhook } from '../controllers/paymentsController.js';
+import { authenticate, authorize } from '../middleware/auth.js';
+
 const router = Router();
 
-router.post('/create-intent', (req, res) => res.json({ message: 'TODO: Create payment intent' }));
-router.post('/release', (req, res) => res.json({ message: 'TODO: Release escrow payment' }));
-router.get('/history', (req, res) => res.json({ message: 'TODO: Payment history' }));
-router.post('/webhook', (req, res) => res.json({ message: 'TODO: Stripe webhook' }));
+// Stripe webhook (must use raw body, no JSON parsing)
+router.post('/webhook', express.raw({ type: 'application/json' }), handleWebhook);
+
+// Protected routes
+router.post('/escrow', authenticate, authorize('client'), createEscrowPayment);
+router.post('/:paymentId/release', authenticate, authorize('client'), releasePayment);
+router.post('/:paymentId/refund', authenticate, authorize('client'), refundPayment);
+router.get('/history', authenticate, getPaymentHistory);
 
 export default router;
