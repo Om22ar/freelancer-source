@@ -14,13 +14,17 @@ import messageRoutes from './routes/messages.js';
 import paymentRoutes from './routes/payments.js';
 import reviewRoutes from './routes/reviews.js';
 import dashboardRoutes from './routes/dashboard.js';
+import setupChatSocket from './socket/chatHandler.js';
 
 dotenv.config();
 
 const app = express();
 const server = createServer(app);
 const io = new Server(server, {
-  cors: { origin: process.env.CLIENT_URL || 'http://localhost:5173' }
+  cors: {
+    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    methods: ['GET', 'POST']
+  }
 });
 
 // Middleware
@@ -45,16 +49,8 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Socket.io for real-time messaging
-io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
-
-  socket.on('join_room', (roomId) => socket.join(roomId));
-  socket.on('send_message', (data) => {
-    io.to(data.roomId).emit('receive_message', data);
-  });
-  socket.on('disconnect', () => console.log('User disconnected:', socket.id));
-});
+// Socket.io setup with auth and chat handling
+setupChatSocket(io);
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
