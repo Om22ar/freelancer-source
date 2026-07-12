@@ -63,6 +63,11 @@ export const login = async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
+    // Guard against OAuth-only accounts (no password set)
+    if (!user.password_hash) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
     // Verify password
     const isValid = await bcrypt.compare(password, user.password_hash);
     if (!isValid) {
