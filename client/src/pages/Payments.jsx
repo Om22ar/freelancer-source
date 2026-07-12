@@ -21,122 +21,117 @@ export default function Payments() {
     fetchPayments();
   }, []);
 
-  const handleRelease = async (paymentId) => {
+  const handleRelease = async (contractId) => {
     if (!confirm('Release payment to freelancer? This cannot be undone.')) return;
     try {
-      await api.post(`/payments/${paymentId}/release`);
-      setPayments(payments.map(p => p.id === paymentId ? { ...p, status: 'released' } : p));
+      await api.post('/payments/release', { contractId });
+      setPayments((prev) =>
+        prev.map((p) =>
+          p.contract_id === contractId ? { ...p, status: 'released' } : p
+        )
+      );
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to release payment');
     }
   };
 
-  const handleRefund = async (paymentId) => {
-    if (!confirm('Refund this payment? Funds will be returned to you.')) return;
-    try {
-      await api.post(`/payments/${paymentId}/refund`);
-      setPayments(payments.map(p => p.id === paymentId ? { ...p, status: 'refunded' } : p));
-    } catch (err) {
-      alert(err.response?.data?.error || 'Failed to refund payment');
-    }
+  const statusColors = {
+    pending: 'bg-yellow-100 text-yellow-700',
+    held: 'bg-blue-100 text-blue-700',
+    released: 'bg-green-100 text-green-700',
+    refunded: 'bg-red-100 text-red-700'
   };
 
-  const statusBadge = (status) => {
-    const styles = {
-      pending: 'bg-yellow-100 text-yellow-700',
-      held: 'bg-blue-100 text-blue-700',
-      released: 'bg-green-100 text-green-700',
-      refunded: 'bg-gray-100 text-gray-700'
-    };
-    return (
-      <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${styles[status] || 'bg-gray-100 text-gray-700'}`}>
-        {status === 'held' ? 'In Escrow' : status}
-      </span>
-    );
+  const statusLabels = {
+    pending: 'Processing',
+    held: 'In Escrow',
+    released: 'Paid',
+    refunded: 'Refunded'
   };
 
   if (loading) return <div className="text-center py-12 text-gray-500">Loading payments...</div>;
 
-  // Calculate totals
-  const totalReleased = payments.filter(p => p.status === 'released').reduce((sum, p) => sum + Number(p.amount), 0);
-  const totalHeld = payments.filter(p => p.status === 'held').reduce((sum, p) => sum + Number(p.amount), 0);
-
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-8">
+    <div className="max-w-5xl mx-auto px-4 py-8">
+      <h1 className="text-3xl font-bold mb-2">
         {user?.role === 'client' ? 'Payment History' : 'Earnings'}
       </h1>
+      <p className="text-gray-500 mb-8">
+        {user?.role === 'client'
+          ? 'Track your payments and release funds to freelancers'
+          : 'View your earnings from completed contracts'}
+      </p>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-6 mb-10">
-        <div className="bg-white border border-gray-200 rounded-xl p-6">
-          <p className="text-sm text-gray-500">{user?.role === 'client' ? 'Total Paid' : 'Total Earned'}</p>
-          <p className="text-3xl font-bold text-green-600 mt-2">${totalReleased.toLocaleString()}</p>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-6">
-          <p className="text-sm text-gray-500">In Escrow</p>
-          <p className="text-3xl font-bold text-blue-600 mt-2">${totalHeld.toLocaleString()}</p>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-6">
-          <p className="text-sm text-gray-500">Total Transactions</p>
-          <p className="text-3xl font-bold text-gray-900 mt-2">{payments.length}</p>
-        </div>
-      </div>
-
-      {/* Payment list */}
       {payments.length === 0 ? (
-        <div className="bg-gray-50 rounded-xl p-8 text-center text-gray-500">
+        <div className="bg-gray-50 rounded-xl p-12 text-center text-gray-500">
           No payment history yet.
         </div>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="text-left px-6 py-4 text-sm font-medium text-gray-500">Project</th>
-                <th className="text-left px-6 py-4 text-sm font-medium text-gray-500">{user?.role === 'client' ? 'Freelancer' : 'Client'}</th>
-                <th className="text-left px-6 py-4 text-sm font-medium text-gray-500">Amount</th>
-                <th className="text-left px-6 py-4 text-sm font-medium text-gray-500">Status</th>
-                <th className="text-left px-6 py-4 text-sm font-medium text-gray-500">Date</th>
-                {user?.role === 'client' && <th className="text-left px-6 py-4 text-sm font-medium text-gray-500">Actions</th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {payments.map(payment => (
-                <tr key={payment.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 font-medium text-gray-900">{payment.job_title}</td>
-                  <td className="px-6 py-4 text-gray-600">
-                    {user?.role === 'client' ? payment.freelancer_name : payment.client_name}
-                  </td>
-                  <td className="px-6 py-4 font-semibold">${Number(payment.amount).toLocaleString()}</td>
-                  <td className="px-6 py-4">{statusBadge(payment.status)}</td>
-                  <td className="px-6 py-4 text-gray-500 text-sm">
-                    {new Date(payment.created_at).toLocaleDateString()}
-                  </td>
-                  {user?.role === 'client' && (
-                    <td className="px-6 py-4">
-                      {payment.status === 'held' && (
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleRelease(payment.id)}
-                            className="px-3 py-1.5 bg-green-600 text-white text-xs rounded-lg font-medium hover:bg-green-700"
-                          >
-                            Release
-                          </button>
-                          <button
-                            onClick={() => handleRefund(payment.id)}
-                            className="px-3 py-1.5 bg-red-50 text-red-600 text-xs rounded-lg font-medium hover:bg-red-100"
-                          >
-                            Refund
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-4">
+          {payments.map((payment) => (
+            <div
+              key={payment.id}
+              className="bg-white border border-gray-200 rounded-xl p-6 flex items-center justify-between"
+            >
+              <div>
+                <h3 className="font-semibold text-gray-900">{payment.job_title}</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  {user?.role === 'client' ? `To: ${payment.freelancer_name}` : `From: ${payment.client_name}`}
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  {new Date(payment.created_at).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric'
+                  })}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusColors[payment.status]}`}>
+                  {statusLabels[payment.status]}
+                </span>
+                <span className="text-xl font-bold text-gray-900">${payment.amount}</span>
+
+                {user?.role === 'client' && payment.status === 'held' && (
+                  <button
+                    onClick={() => handleRelease(payment.contract_id)}
+                    className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg font-medium hover:bg-green-700 transition"
+                  >
+                    Release
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Summary */}
+      {payments.length > 0 && (
+        <div className="mt-8 bg-gray-50 rounded-xl p-6 flex justify-between items-center">
+          <div>
+            <p className="text-sm text-gray-500">Total {user?.role === 'client' ? 'Spent' : 'Earned'}</p>
+            <p className="text-2xl font-bold text-gray-900">
+              ${payments
+                .filter((p) => p.status === 'released')
+                .reduce((sum, p) => sum + Number(p.amount), 0)
+                .toLocaleString()}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">In Escrow</p>
+            <p className="text-2xl font-bold text-indigo-600">
+              ${payments
+                .filter((p) => p.status === 'held')
+                .reduce((sum, p) => sum + Number(p.amount), 0)
+                .toLocaleString()}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">Transactions</p>
+            <p className="text-2xl font-bold text-gray-900">{payments.length}</p>
+          </div>
         </div>
       )}
     </div>
