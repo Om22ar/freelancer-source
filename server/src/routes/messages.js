@@ -1,8 +1,17 @@
 import { Router } from 'express';
+import { getConversations, getMessages, sendMessage } from '../controllers/messagesController.js';
+import { authenticate } from '../middleware/auth.js';
+import { messageLimiter } from '../middleware/rateLimiter.js';
+
 const router = Router();
 
-router.get('/conversations', (req, res) => res.json({ message: 'TODO: List conversations' }));
-router.get('/conversations/:id', (req, res) => res.json({ message: 'TODO: Get messages' }));
-router.post('/', (req, res) => res.json({ message: 'TODO: Send message' }));
+// Get all conversations for the logged-in user
+router.get('/conversations', authenticate, getConversations);
+
+// Get messages for a specific contract conversation
+router.get('/conversations/:contractId', authenticate, getMessages);
+
+// Send a message (REST fallback, rate limited: 30/min)
+router.post('/', authenticate, messageLimiter, sendMessage);
 
 export default router;
