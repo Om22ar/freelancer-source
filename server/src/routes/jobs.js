@@ -1,10 +1,19 @@
 import { Router } from 'express';
+import { createJob, getJobs, getJob, updateJob, deleteJob, getMyJobs } from '../controllers/jobsController.js';
+import { createJobRules, updateJobRules } from '../validators/jobsValidator.js';
+import { validate } from '../middleware/validate.js';
+import { authenticate, authorize } from '../middleware/auth.js';
+
 const router = Router();
 
-router.get('/', (req, res) => res.json({ message: 'TODO: List jobs' }));
-router.get('/:id', (req, res) => res.json({ message: 'TODO: Get job detail' }));
-router.post('/', (req, res) => res.json({ message: 'TODO: Create job' }));
-router.put('/:id', (req, res) => res.json({ message: 'TODO: Update job' }));
-router.delete('/:id', (req, res) => res.json({ message: 'TODO: Delete job' }));
+// Public routes
+router.get('/', getJobs);
+router.get('/:id', getJob);
+
+// Protected routes (must be logged in)
+router.get('/me/listings', authenticate, getMyJobs);
+router.post('/', authenticate, authorize('client'), createJobRules, validate, createJob);
+router.put('/:id', authenticate, updateJobRules, validate, updateJob);
+router.delete('/:id', authenticate, deleteJob);
 
 export default router;
