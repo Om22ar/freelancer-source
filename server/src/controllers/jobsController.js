@@ -97,6 +97,11 @@ export const updateJob = async (req, res) => {
 
     const { title, description, category, skillsRequired, budgetMin, budgetMax, budgetType, duration, status } = req.body;
 
+    // Restrict status transitions: clients can only cancel, not mark as completed
+    if (status && status !== 'cancelled' && status !== 'open') {
+      return res.status(400).json({ error: 'You can only cancel or reopen a job. Completion happens via contract flow.' });
+    }
+
     const [updated] = await db('jobs')
       .where({ id: req.params.id })
       .update({
