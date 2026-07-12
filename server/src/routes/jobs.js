@@ -8,11 +8,13 @@ const router = Router();
 
 // Public routes
 router.get('/', getJobs);
-router.get('/:id', getJob);
 
-// Protected routes (must be logged in)
+// Protected routes (must be above /:id to avoid being swallowed)
 router.get('/me/listings', authenticate, getMyJobs);
 router.post('/', authenticate, authorize('client'), createJobRules, validate, createJob);
+
+// Parameterized routes
+router.get('/:id', getJob);
 router.put('/:id', authenticate, updateJobRules, validate, updateJob);
 router.delete('/:id', authenticate, deleteJob);
 
