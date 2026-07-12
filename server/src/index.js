@@ -15,6 +15,7 @@ import paymentRoutes from './routes/payments.js';
 import reviewRoutes from './routes/reviews.js';
 import dashboardRoutes from './routes/dashboard.js';
 import setupChatSocket from './socket/chatHandler.js';
+import { apiLimiter } from './middleware/rateLimiter.js';
 
 dotenv.config();
 
@@ -34,6 +35,9 @@ app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Global rate limiter (100 req/min per IP)
+app.use('/api', apiLimiter);
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/jobs', jobRoutes);
@@ -44,7 +48,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
-// Health check
+// Health check (no rate limit)
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
