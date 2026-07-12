@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import useAuthStore from '../store/authStore';
 import api from '../lib/api';
+import GoogleSignInButton from '../components/GoogleSignInButton';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -37,6 +38,17 @@ export default function Login() {
             {error}
           </div>
         )}
+
+        <GoogleSignInButton />
+
+        <div className="relative my-6">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-300"></div>
+          </div>
+          <div className="relative flex justify-center text-sm">
+            <span className="px-4 bg-white text-gray-500">or sign in with email</span>
+          </div>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
