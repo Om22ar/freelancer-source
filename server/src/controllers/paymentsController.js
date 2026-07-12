@@ -1,8 +1,10 @@
-import stripe from '../config/stripe.js';
+import Stripe from 'stripe';
 import db from '../config/database.js';
 
-// Create a payment intent and hold funds in escrow
-export const createEscrowPayment = async (req, res) => {
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+// Create a payment intent (escrow deposit)
+export const createPaymentIntent = async (req, res) => {
   try {
     const { contractId } = req.body;
     const userId = req.user.id;
@@ -26,16 +28,16 @@ export const createEscrowPayment = async (req, res) => {
       return res.status(409).json({ error: 'Payment already initiated for this contract' });
     }
 
-    // Create Stripe payment intent (capture later for escrow)
+    // Create Stripe payment intent
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(contract.amount * 100), // cents
+      amount: Math.round(contract.amount * 100), // Convert to cents
       currency: 'usd',
-      capture_method: 'manual', // hold funds, release later
       metadata: {
-        contract_id: contractId,
-        client_id: userId,
-        freelancer_id: contract.freelancer_id
-      }
+        contractId: contract.id,
+        clientId: userId,
+        freelancerId: contract.freelancer_id
+      },
+      payment_method_types: ['card']
     });
 
     // Store payment record
@@ -53,97 +55,137 @@ export const createEscrowPayment = async (req, res) => {
       clientSecret: paymentIntent.client_secret
     });
   } catch (err) {
-    console.error('Create escrow payment error:', err);
+    console.error('Create payment intent error:', err);
     res.status(500).json({ error: 'Failed to create payment' });
   }
 };
 
-// Release escrow funds to freelancer (milestone completed)
+// Confirm payment was successful (called after Stripe confirms)
+export const confirmPayment = async (req, res) => {
+  try {
+    const { paymentIntentId } = req.body;
+
+    // Verify with Stripe
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+    if (paymentIntent.status !== 'succeeded') {
+      return res.status(400).json({ error: 'Payment not yet confirmed by Stripe' });
+    }
+
+    // Update payment status to held (escrow)
+    const [payment] = await db('payments')
+      .where({ stripe_payment_id: paymentIntentId })
+      .update({ status: 'held' })
+      .returning('*');
+
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment record not found' });
+    }
+
+    res.json({ payment, message: 'Payment held in escrow' });
+  } catch (err) {
+    console.error('Confirm payment error:', err);
+    res.status(500).json({ error: 'Failed to confirm payment' });
+  }
+};
+
+// Release escrow payment to freelancer (client approves work)
 export const releasePayment = async (req, res) => {
   try {
-    const { paymentId } = req.params;
+    const { contractId } = req.body;
     const userId = req.user.id;
 
-    // Get payment and verify ownership
-    const payment = await db('payments').where({ id: paymentId }).first();
-    if (!payment) return res.status(404).json({ error: 'Payment not found' });
-
+    // Verify client owns this contract
     const contract = await db('contracts')
-      .where({ id: payment.contract_id, client_id: userId })
+      .where({ id: contractId, client_id: userId })
       .first();
 
     if (!contract) {
-      return res.status(403).json({ error: 'Only the client can release payments' });
+      return res.status(404).json({ error: 'Contract not found or unauthorized' });
     }
 
-    if (payment.status !== 'held') {
-      return res.status(400).json({ error: 'Payment is not in escrow' });
+    // Find held payment
+    const payment = await db('payments')
+      .where({ contract_id: contractId, status: 'held' })
+      .first();
+
+    if (!payment) {
+      return res.status(404).json({ error: 'No held payment found for this contract' });
     }
 
-    // Capture the payment intent (releases funds)
-    await stripe.paymentIntents.capture(payment.stripe_payment_id);
+    // Release payment (in production, trigger Stripe Transfer to freelancer's connected account)
+    await db.transaction(async (trx) => {
+      await trx('payments')
+        .where({ id: payment.id })
+        .update({ status: 'released' });
 
-    // Update payment status
-    await db('payments').where({ id: paymentId }).update({ status: 'released' });
-
-    // Check if this completes the contract
-    const pendingPayments = await db('payments')
-      .where({ contract_id: contract.id })
-      .whereIn('status', ['pending', 'held'])
-      .count();
-
-    if (Number(pendingPayments[0].count) === 0) {
-      await db('contracts')
-        .where({ id: contract.id })
+      await trx('contracts')
+        .where({ id: contractId })
         .update({ status: 'completed', completed_at: new Date() });
-    }
 
-    res.json({ message: 'Payment released to freelancer', status: 'released' });
+      await trx('jobs')
+        .where({ id: contract.job_id })
+        .update({ status: 'completed', updated_at: new Date() });
+    });
+
+    res.json({ message: 'Payment released to freelancer. Contract completed.' });
   } catch (err) {
     console.error('Release payment error:', err);
     res.status(500).json({ error: 'Failed to release payment' });
   }
 };
 
-// Request a refund (dispute scenario)
-export const refundPayment = async (req, res) => {
+// Request refund (dispute scenario)
+export const requestRefund = async (req, res) => {
   try {
-    const { paymentId } = req.params;
+    const { contractId, reason } = req.body;
     const userId = req.user.id;
 
-    const payment = await db('payments').where({ id: paymentId }).first();
-    if (!payment) return res.status(404).json({ error: 'Payment not found' });
-
     const contract = await db('contracts')
-      .where({ id: payment.contract_id, client_id: userId })
+      .where({ id: contractId, client_id: userId })
       .first();
 
     if (!contract) {
-      return res.status(403).json({ error: 'Only the client can request refunds' });
+      return res.status(404).json({ error: 'Contract not found or unauthorized' });
     }
 
-    if (payment.status !== 'held') {
-      return res.status(400).json({ error: 'Can only refund held payments' });
+    const payment = await db('payments')
+      .where({ contract_id: contractId, status: 'held' })
+      .first();
+
+    if (!payment) {
+      return res.status(404).json({ error: 'No held payment to refund' });
     }
 
-    // Cancel the payment intent (refunds the hold)
-    await stripe.paymentIntents.cancel(payment.stripe_payment_id);
+    // Create Stripe refund
+    await stripe.refunds.create({
+      payment_intent: payment.stripe_payment_id,
+      reason: 'requested_by_customer'
+    });
 
-    await db('payments').where({ id: paymentId }).update({ status: 'refunded' });
+    await db.transaction(async (trx) => {
+      await trx('payments')
+        .where({ id: payment.id })
+        .update({ status: 'refunded' });
 
-    res.json({ message: 'Payment refunded', status: 'refunded' });
+      await trx('contracts')
+        .where({ id: contractId })
+        .update({ status: 'disputed' });
+    });
+
+    res.json({ message: 'Refund initiated. Contract marked as disputed.' });
   } catch (err) {
-    console.error('Refund payment error:', err);
-    res.status(500).json({ error: 'Failed to refund payment' });
+    console.error('Refund error:', err);
+    res.status(500).json({ error: 'Failed to process refund' });
   }
 };
 
-// Get payment history for the logged-in user
+// Get payment history for user
 export const getPaymentHistory = async (req, res) => {
   try {
     const userId = req.user.id;
     const role = req.user.role;
-    const userField = role === 'client' ? 'client_id' : 'freelancer_id';
+    const userField = role === 'client' ? 'contracts.client_id' : 'contracts.freelancer_id';
 
     const payments = await db('payments')
       .select(
@@ -157,71 +199,12 @@ export const getPaymentHistory = async (req, res) => {
       .join('jobs', 'contracts.job_id', 'jobs.id')
       .join('users as freelancer', 'contracts.freelancer_id', 'freelancer.id')
       .join('users as client', 'contracts.client_id', 'client.id')
-      .where(`contracts.${userField}`, userId)
+      .where(userField, userId)
       .orderBy('payments.created_at', 'desc');
 
     res.json(payments);
   } catch (err) {
-    console.error('Get payment history error:', err);
+    console.error('Payment history error:', err);
     res.status(500).json({ error: 'Failed to fetch payment history' });
   }
-};
-
-// Stripe webhook handler
-export const handleWebhook = async (req, res) => {
-  const sig = req.headers['stripe-signature'];
-  let event;
-
-  try {
-    event = stripe.webhooks.constructEvent(
-      req.body,
-      sig,
-      process.env.STRIPE_WEBHOOK_SECRET
-    );
-  } catch (err) {
-    console.error('Webhook signature verification failed:', err.message);
-    return res.status(400).json({ error: 'Invalid webhook signature' });
-  }
-
-  switch (event.type) {
-    case 'payment_intent.amount_capturable_updated': {
-      // Funds are now held in escrow
-      const paymentIntent = event.data.object;
-      await db('payments')
-        .where({ stripe_payment_id: paymentIntent.id })
-        .update({ status: 'held' });
-      break;
-    }
-
-    case 'payment_intent.succeeded': {
-      // Payment captured (released to freelancer)
-      const paymentIntent = event.data.object;
-      await db('payments')
-        .where({ stripe_payment_id: paymentIntent.id })
-        .update({ status: 'released' });
-      break;
-    }
-
-    case 'payment_intent.canceled': {
-      // Payment refunded
-      const paymentIntent = event.data.object;
-      await db('payments')
-        .where({ stripe_payment_id: paymentIntent.id })
-        .update({ status: 'refunded' });
-      break;
-    }
-
-    case 'payment_intent.payment_failed': {
-      const paymentIntent = event.data.object;
-      await db('payments')
-        .where({ stripe_payment_id: paymentIntent.id })
-        .update({ status: 'pending' });
-      break;
-    }
-
-    default:
-      console.log(`Unhandled webhook event: ${event.type}`);
-  }
-
-  res.json({ received: true });
 };
