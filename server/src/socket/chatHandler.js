@@ -1,6 +1,31 @@
 import jwt from 'jsonwebtoken';
 import db from '../config/database.js';
 
+// Simple in-memory rate limiter for socket messages
+const socketRateLimits = new Map();
+
+function isRateLimited(userId, maxPerMinute = 30) {
+  const now = Date.now();
+  const userHistory = socketRateLimits.get(userId) || [];
+  const recent = userHistory.filter(ts => now - ts < 60000);
+  socketRateLimits.set(userId, recent);
+
+  if (recent.length >= maxPerMinute) return true;
+  recent.push(now);
+  socketRateLimits.set(userId, recent);
+  return false;
+}
+
+// Clean up rate limit map every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [userId, history] of socketRateLimits.entries()) {
+    const recent = history.filter(ts => now - ts < 60000);
+    if (recent.length === 0) socketRateLimits.delete(userId);
+    else socketRateLimits.set(userId, recent);
+  }
+}, 5 * 60 * 1000);
+
 export default function setupChatSocket(io) {
   // Authenticate socket connections via JWT
   io.use((socket, next) => {
@@ -26,7 +51,6 @@ export default function setupChatSocket(io) {
     // Join a contract conversation room
     socket.on('join_conversation', async (contractId) => {
       try {
-        // Verify user belongs to this contract
         const contract = await db('contracts').where({ id: contractId }).first();
         if (!contract) return;
         if (contract.client_id !== userId && contract.freelancer_id !== userId) return;
@@ -43,11 +67,23 @@ export default function setupChatSocket(io) {
       socket.leave(`contract:${contractId}`);
     });
 
-    // Send a message via socket
+    // Send a message via socket (rate limited)
     socket.on('send_message', async (data) => {
       try {
+        // Rate limit check
+        if (isRateLimited(userId)) {
+          socket.emit('message_error', { error: 'Sending messages too fast. Slow down.' });
+          return;
+        }
+
         const { contractId, content } = data;
         if (!contractId || !content?.trim()) return;
+
+        // Validate message length
+        if (content.trim().length > 5000) {
+          socket.emit('message_error', { error: 'Message too long (max 5000 characters).' });
+          return;
+        }
 
         // Verify user belongs to this contract
         const contract = await db('contracts').where({ id: contractId }).first();
