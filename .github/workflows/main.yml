@@ -1,0 +1,37 @@
+name: Node.js CI/CD & Security Audit
+
+on:
+  push:
+    branches: [ "dev", "main" ]
+  pull_request:
+    branches: [ "dev", "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run Security Audit (Check for Vulnerabilities)
+      run: npm audit --audit-level=high
+
+    - name: Code Linting (Syntax & Code Quality)
+      run: npm run lint --if-present
+
+    - name: Run Automated Tests
+      run: npm test --if-present
